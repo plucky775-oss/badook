@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createGame,play,pass,undo,group,simulate,territory,validateGame,botMove} from '../dist/engine.js';
+import {LESSONS} from '../dist/lessons.js';
+const board=(b=[],w=[])=>{const x=Array(25).fill(0);b.forEach(p=>x[p]=1);w.forEach(p=>x[p]=2);return x;};
+test('capture, liberties and immutable source',()=>{const b=board([7,11,13],[12]);const r=play(createGame(5,b),17);assert.equal(r.ok,true);assert.deepEqual(r.captured,[12]);assert.equal(r.state.captures[1],1);assert.equal(b[12],2);assert.equal(group(b,12,5).liberties.size,1);});
+test('suicide and occupied points rejected; diagonal stones separate',()=>{const b=board([],[7,11,13,17]);assert.equal(simulate(b,5,12,1).error,'suicide');assert.equal(simulate(b,5,7,1).error,'occupied');assert.equal(group(board([6,12]),6,5).stones.size,1);});
+test('ko rejects immediate recapture',()=>{const s=createGame(5,board([11,7,13],[12,16,18,22]));const r=play(s,17);assert.equal(r.ok,true);assert.equal(play(r.state,12).error,'ko');});
+test('passing, undo and serialized resume preserve state',()=>{let s=play(createGame(9),20).state;s=pass(s);const copy=JSON.parse(JSON.stringify(s));assert.equal(validateGame(copy),true);assert.equal(pass(copy).phase,'scoring');const previous=undo(copy);assert.equal(previous.turn,2);assert.equal(previous.history.length,2);assert.equal(previous.moves.length,1);assert.equal(validateGame(previous),true);assert.deepEqual(undo(previous).board,Array(81).fill(0));});
+test('manual neutral marking excludes territory and dead stones count as prisoners',()=>{const b=Array(25).fill(1);b[6]=0;b[18]=2;const s=createGame(5,b,1,0);const score=territory(s,[18],[6]);assert.equal(score.counts[1],1);assert.equal(score.deadCounts[2],1);assert.equal(score.black,2);});
+test('all 30 lessons have four activities and legal declared placements',()=>{assert.equal(LESSONS.length,30);for(const l of LESSONS){assert.equal(l.steps.length,4);for(const a of l.steps){if(a.kind==='place')for(const p of a.answers)assert.equal(simulate(a.board,a.size,p,a.player).ok,true,`lesson ${l.id} point ${p}`);}}});
+test('practice opponent only makes legal moves across a saved game',()=>{let s=createGame(9);for(let i=0;i<60&&s.phase==='play';i++){const m=botMove(s);s=m?play(s,m.p).state:pass(s);assert.equal(validateGame(JSON.parse(JSON.stringify(s))),true);}});
+test('malformed imported games rejected',()=>{const s=createGame(9);assert.equal(validateGame({...s,moves:[{}]}),false);assert.equal(validateGame({...s,dead:['<img>']}),false);assert.equal(validateGame({...s,captures:{1:-1,2:0}}),false);});
